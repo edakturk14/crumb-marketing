@@ -1,0 +1,11 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+process.env.DATA_DIR = await mkdtemp(path.join(tmpdir(), "crumb-ui-"));
+process.env.PORT = "43168";
+process.env.NODE_ENV = "production";
+process.env.AI_PROVIDER = "demo";
+process.env.OPENAI_API_KEY = "";
+process.env.S3_BUCKET = "";
+process.env.DEMO_MODE = "true";
+await import("../server/index.mjs");
