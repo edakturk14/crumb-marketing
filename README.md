@@ -39,28 +39,28 @@ Edit `.env`, then restart the server. `DEMO_MODE=false` is the default. Sample f
 
 ## What is real, and what is mocked?
 
-| Capability           | Local MVP behavior                                                                                                                                                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upload/storage       | Real file uploads; originals stored on disk, separate normalized JPEG thumbnails. 50 MB per file; many files handled sequentially to bound memory. Images: JPG, PNG, WebP, AVIF. Videos: MP4, MOV, WebM; playback depends on browser codec support.   |
-| Persistence          | SQLite stores business, asset metadata/analysis/tags, used state, drafts, performance, connection state and latest recommendation. Media lives outside the DB.                                                                                        |
-| Without an AI key    | Real local brightness, resolution and duplicate checks. Subject recognition is **not** performed. Turkish copy comes from labeled templates; seeded analyses are examples.                                                                            |
-| With an AI key       | Server-side OpenAI Responses adapter analyzes an image or a browser-selected video frame and produces schema-validated Turkish content. On refusal, invalid response, timeout or outage, local/template fallback is shown with an explicit notice.    |
-| Video analysis       | Browser selects one frame around the first second. The AI can assess that frame, not motion or audio. If extraction fails, video is retained with basic guidance. Preview it before sharing.                                                          |
-| Crop/trim/text       | Recommendations and a visual preview, **not rendered edits**. Original media downloads unchanged. No video transcoding or automatic editing.                                                                                                          |
-| Instagram connection | **Mock adapter only**, clearly labeled. Disabled in the normal app. In explicit test/demo mode only, “Try demo connection” loads example historical posts and metrics. No external account access, authentication, sync or publishing.                |
-| Results and learning | Real deterministic calculations on persisted data, including manually entered real results. Missing values stay unknown. Reach is summed per post, not unique people across all posts. Followers are unavailable and omitted. No AI-invented metrics. |
-| Seasonal ideas       | Istanbul calendar and available tags; no external trend scraping.                                                                                                                                                                                     |
-| S3                   | Optional adapter implemented; local disk is the tested default. S3 requires your credentials/bucket and has not been verified against a live account.                                                                                                 |
+| Capability                 | Local MVP behavior                                                                                                                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload/storage             | Real file uploads; originals stored on disk, separate normalized JPEG thumbnails. 50 MB per file; many files handled sequentially to bound memory. Images: JPG, PNG, WebP, AVIF. Videos: MP4, MOV, WebM; playback depends on browser codec support.   |
+| Persistence                | SQLite stores business, asset metadata/analysis/tags, used state, drafts, performance, connection state and latest recommendation. Media lives outside the DB.                                                                                        |
+| Without an AI key          | Real local brightness, resolution and duplicate checks. Subject recognition is **not** performed. Turkish copy comes from labeled templates; seeded analyses are examples.                                                                            |
+| Paid AI adapter (disabled) | Retained in source, but application startup prevents selecting it under the owner’s no-bill requirement. Local checks/templates remain available.                                                                                                     |
+| Video analysis             | Browser selects one frame around the first second. The AI can assess that frame, not motion or audio. If extraction fails, video is retained with basic guidance. Preview it before sharing.                                                          |
+| Crop/trim/text             | Recommendations and a visual preview, **not rendered edits**. Original media downloads unchanged. No video transcoding or automatic editing.                                                                                                          |
+| Instagram connection       | **Mock adapter only**, clearly labeled. Disabled in the normal app. In explicit test/demo mode only, “Try demo connection” loads example historical posts and metrics. No external account access, authentication, sync or publishing.                |
+| Results and learning       | Real deterministic calculations on persisted data, including manually entered real results. Missing values stay unknown. Reach is summed per post, not unique people across all posts. Followers are unavailable and omitted. No AI-invented metrics. |
+| Seasonal ideas             | Istanbul calendar and available tags; no external trend scraping.                                                                                                                                                                                     |
+| S3                         | Adapter retained but disabled by the free-only policy. All current uploads use local disk.                                                                                                                                                            |
 
 ## Credentials and connections
 
 **None needed to use the complete local demo.**
 
-For live AI, set `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and optionally `OPENAI_MODEL` in `.env`. An account with API access and available usage credit is required. The key stays on the server; only resized previews and relevant text metadata are sent. Live paid calls are not exercised by the tests.
+The owner requires **zero service charges**. Paid AI and S3 storage are disabled by `server/cost-policy.mjs`. Adding an OpenAI key does not activate it; selecting `AI_PROVIDER=openai` or setting `S3_BUCKET` stops startup with an explanatory error. The app uses local image checks and Turkish templates. A live free AI provider has not been connected. Tests make no paid calls.
 
 For real Instagram history, the remaining work is **integration development**, not just adding a token. Supply an Instagram Professional account, a Meta developer app with the necessary approved permissions, and a registered callback URL. Then replace `server/instagram.mjs` with OAuth, token storage/refresh, pagination and normalized media/insights fetching. Exact permissions and authentication flow must be verified against Meta’s current documentation during that integration. No app credentials or approval are needed for the mock. Publishing remains out of scope.
 
-For optional S3-compatible storage, set the `S3_*` variables in `.env.example`; use a private bucket. Leave them blank for local file storage.
+Media stays on local disk. The S3 adapter remains in source for reference but cannot be selected in the free-only configuration.
 
 ## Tests
 
@@ -78,7 +78,7 @@ See [verification details](docs/verification.md) and screenshots in `docs/screen
 ## Architecture and limits
 
 - React + Vite frontend; Express server; Node SQLite; Sharp thumbnails/checks.
-- `server/ai.mjs`: replaceable `analyze()` / `generate()` provider boundary. `AI_PROVIDER=demo|openai`; optional OpenAI implementation uses [image inputs](https://developers.openai.com/api/docs/guides/images-vision) and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+- `server/ai.mjs`: replaceable `analyze()` / `generate()` provider boundary. `AI_PROVIDER=demo` in free-only mode; disabled OpenAI implementation uses [image inputs](https://developers.openai.com/api/docs/guides/images-vision) and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 - `server/domain.mjs`: pure inventory, seasonal, comparison, recommendation and template functions.
 - `server/instagram.mjs`: mock history/connection adapter. No publishing endpoint exists.
 - `server/storage.mjs`: private local or S3 storage behind the same file URLs.
@@ -91,8 +91,10 @@ Back up the SQLite database and media objects together while the app is stopped.
 
 ## GitHub and Vercel next step
 
-Suggested GitHub repository: **crumb-marketing**. Create an empty repository; the local source is ready for an initial push. No local database, uploaded media, secrets or dependencies belong in Git.
+Repository: [edakturk14/crumb-marketing](https://github.com/edakturk14/crumb-marketing). No local database, uploaded media, secrets or dependencies belong in Git.
 
 The current persistence is local SQLite (`.data/crumb.sqlite`) and local files (`.data/objects`). It is not yet wired to a hosted database. Before a Vercel preview is used for real uploads, migrate metadata to a hosted database, use durable object storage, and adapt uploads to go directly to storage. Vercel functions have a 4.5 MB request payload limit, below the MVP’s 50 MB video limit. Add owner authentication as part of that deployment.
 
-A suitable next setup is Neon Postgres and private Vercel Blob; provisioning and migration have not been performed. References: [Vercel storage](https://vercel.com/docs/storage), [function limits](https://vercel.com/docs/functions/limitations).
+The owner clarified that this is a **personal, non-commercial prototype**, with no sales or earnings. Vercel Hobby fits that scope. Use the actual Hobby plan, not a Pro trial or the free allowance inside a paid plan. No hosted resources have been provisioned. References: [Hobby plan and usage limits](https://vercel.com/docs/plans/hobby), [function limits](https://vercel.com/docs/functions/limitations).
+
+For the free hosted prototype, keep Vercel Hobby and evaluate Supabase Free for database/auth/media, verifying the actual account plans and quotas before provisioning. This requires backend adaptation; it is not a completed deployment. Hitting a free quota must restrict service instead of incurring charges. Do not attach paid plans or rely on billing alerts as a spending cap. Source: [Supabase billing FAQ](https://supabase.com/docs/guides/platform/billing-faq).

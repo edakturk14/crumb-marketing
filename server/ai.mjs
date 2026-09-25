@@ -1,8 +1,8 @@
 import sharp from "sharp";
 import { z } from "zod";
 import { templatePost } from "./domain.mjs";
-export const aiMode =
-  process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : "demo");
+import { freeOnly } from "./cost-policy.mjs";
+export const aiMode = freeOnly.ai;
 const analysisSchema = z.object({
   quality: z.enum(["Great", "Usable", "Skip"]),
   tags: z.array(z.string()).max(8),

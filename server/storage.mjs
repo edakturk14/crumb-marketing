@@ -6,7 +6,8 @@ import {
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { dataDir } from "./db.mjs";
-export const storageMode = process.env.S3_BUCKET ? "s3" : "local";
+import { freeOnly } from "./cost-policy.mjs";
+export const storageMode = freeOnly.storage;
 const client =
   storageMode === "s3"
     ? new S3Client({
