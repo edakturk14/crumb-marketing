@@ -87,7 +87,9 @@ export function summarize(metrics, now = new Date()) {
   );
   // Never mix sample and actual results into the same evidence.
   const actual = recent.filter((m) => m.source !== "demo");
-  const rows = actual.length ? actual : recent;
+  // Prefer imported results to manual entries when connected; avoid counting the same post twice.
+  const imported = actual.filter((m) => m.source === "instagram");
+  const rows = imported.length ? imported : actual.length ? actual : recent;
   const sum = (key) =>
     rows.some((m) => Number.isFinite(m[key]))
       ? rows.reduce((n, m) => n + (m[key] ?? 0), 0)
@@ -115,7 +117,13 @@ export function summarize(metrics, now = new Date()) {
     videos: videos.length,
     photos: photos.length,
     rows: rows.sort((a, b) => new Date(b.date) - new Date(a.date)),
-    source: actual.length ? "manual" : rows.length ? "demo" : "none",
+    source: imported.length
+      ? "instagram"
+      : actual.length
+        ? "manual"
+        : rows.length
+          ? "demo"
+          : "none",
   };
 }
 export function chooseAssets(assets, summary) {
@@ -141,7 +149,9 @@ export function recommendation(assets, summary) {
   const label =
     summary.source === "demo"
       ? "Örnek verilere"
-      : "Girdiğin son 30 günlük sonuçlara";
+      : summary.source === "instagram"
+        ? "Instagram’dan alınan son gönderi sonuçlarına"
+        : "Girdiğin son 30 günlük sonuçlara";
   return {
     asset,
     count: ready.length,

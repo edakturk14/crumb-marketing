@@ -1,50 +1,73 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-} from "@aws-sdk/client-s3";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { dataDir } from "./db.mjs";
 import { freeOnly } from "./cost-policy.mjs";
 export const storageMode = freeOnly.storage;
-const client =
-  storageMode === "s3"
-    ? new S3Client({
-        region: process.env.S3_REGION || "auto",
-        endpoint: process.env.S3_ENDPOINT || undefined,
-        forcePathStyle: !!process.env.S3_ENDPOINT,
-        credentials: process.env.S3_ACCESS_KEY_ID
-          ? {
-              accessKeyId: process.env.S3_ACCESS_KEY_ID,
-              secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-            }
-          : undefined,
-      })
+export const supabase =
+  storageMode === "supabase"
+    ? (await import("@supabase/supabase-js")).createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      )
     : null;
-export async function saveObject(key, buffer, mime) {
-  if (client)
-    await client.send(
-      new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET,
-        Key: key,
-        Body: buffer,
-        ContentType: mime,
-      }),
+const bucket = () => supabase.storage.from("crumb-media");
+function check(error) {
+  if (error)
+    throw Object.assign(
+      new Error(
+        "Storage is unavailable or full. Please try again later; no paid upgrade will be made.",
+      ),
+      { status: 503 },
     );
-  else {
+}
+export async function saveObject(key, buffer, mime) {
+  if (supabase) {
+    const { error } = await bucket().upload(key, buffer, {
+      contentType: mime,
+      upsert: true,
+    });
+    check(error);
+  } else {
     await mkdir(path.join(dataDir, "objects"), { recursive: true });
     await writeFile(path.join(dataDir, "objects", key), buffer);
   }
   return `/api/files/${key}`;
 }
+export async function signedUpload(key) {
+  const { data, error } = await bucket().createSignedUploadUrl(key);
+  check(error);
+  return data.signedUrl;
+}
+export async function signedDownload(key) {
+  const { data, error } = await bucket().createSignedUrl(key, 300);
+  check(error);
+  return data.signedUrl;
+}
+export async function objectInfo(key) {
+  const { data, error } = await bucket().info(key);
+  check(error);
+  return data;
+}
 export async function readObject(key) {
-  if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error("Invalid key");
-  if (client) {
-    const r = await client.send(
-      new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }),
-    );
-    return Buffer.from(await r.Body.transformToByteArray());
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw Error("Invalid key");
+  if (supabase) {
+    const { data, error } = await bucket().download(key);
+    check(error);
+    return Buffer.from(await data.arrayBuffer());
   }
   return readFile(path.join(dataDir, "objects", key));
+}
+export async function removeObjects(keys) {
+  if (supabase) {
+    const { error } = await bucket().remove(keys);
+    check(error);
+  } else
+    await Promise.all(
+      keys.map((k) =>
+        unlink(path.join(dataDir, "objects", k)).catch((e) => {
+          if (e.code !== "ENOENT") throw e;
+        }),
+      ),
+    );
 }

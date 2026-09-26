@@ -1,100 +1,69 @@
 # Crumb — Cake Gallery’s marketing companion
 
-A working local MVP for **Cake Gallery Maslak**, a custom cake bakery in Istanbul. English interface; Turkish captions, on-screen text, CTAs, hashtags, analysis feedback, seasonal ideas and filming advice.
+A personal, non-commercial prototype for Cake Gallery Maslak. English UI; Turkish captions, recommendations, on-screen text and filming advice. **No paid AI or services. No sample content or statistics in the normal workspace.**
 
 ## Run locally
 
-Requires **Node.js 24 or newer** (uses built-in SQLite).
+Node.js 24 or newer:
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
-Open **http://127.0.0.1:3000**. No API keys or Instagram account are required. Your content library and Results start empty, ready for your own uploads. No Instagram metrics are fetched or fabricated.
+Open http://127.0.0.1:3000. No credentials needed: local SQLite, files under `.data/objects`, image checks and Turkish templates. To serve a production build locally, run `npm run build` then `npm start`.
 
-For a production build running locally:
+Optional settings are documented in `.env.example`. `DEMO_MODE=true` is only for isolated tests. `npm run remove:samples` removes legacy local samples while preserving real content.
 
-```sh
-npm run build
-npm start
-```
+## The working loop
 
-Optional configuration:
+Upload many photos/videos → Great / Usable / Skip feedback → Today recommendation → editable Turkish post preview → copy/download and share manually → enter results or refresh connected Instagram insights → next capture recommendation.
 
-```sh
-cp .env.example .env
-```
+The app provides Today, Content, Results, How to use and Settings. Original media is preserved. It recommends crops/trims and text but does not render edited videos. It never publishes to Instagram.
 
-Edit `.env`, then restart the server. `DEMO_MODE=false` is the default. Sample fixtures are only loaded when explicitly enabled for isolated testing. To remove legacy samples from an existing workspace, run `npm run remove:samples`; real uploads and their results are preserved.
+## Hosted prototype
 
-## Try the whole loop
+Live app: https://crumb-marketing-eight.vercel.app. GitHub auto-deploy linking needs the Vercel GitHub app to have access to this repository; CLI deployment works independently.
 
-1. **Content:** drop a week’s photos and videos together. Each file uploads with progress and a thumbnail, then gets Great / Usable / Skip feedback. Open an asset to see Turkish advice. Repeated or very similar images are flagged, not deleted.
-2. **Today:** see useful unused inventory, a recommended post, one seasonal idea and one practical capture instruction. Low inventory offers a three-shot guide.
-3. **Create this post:** get a Reel, single image, carousel (select multiple assets), or Story (suitable tall image). Edit the Turkish caption, text, CTA and hashtags in an Instagram-style preview. Save a draft, copy the caption, and download text and media. Reel drafts include a suggested cover frame.
-4. Share the draft manually in Instagram, then click **I’ve posted this**. This marks its media as used; it never publishes remotely.
-5. **Results:** add views, reach, likes, comments and saves from Instagram. Leave unavailable metrics blank. Results persist and feed the next recommendation. Two video and two photo observations are required for a format comparison; tagged close-up/wide photos are compared separately. Actual entered results replace sample data in the summary rather than mixing with it.
-6. **How to use:** a visual four-step guide, account requirements and connection status. **Settings:** business name, industry, location, Turkish language and Instagram connection.
+Vercel **Hobby** serves the frontend and one Express function. A separate, explicitly provisioned Supabase **Free Plan** stores metadata in Postgres and files in a private bucket. No paid trial, automatic upgrade, paid AI or S3 connection is enabled. Free limits restrict availability rather than enabling billable overages. [Vercel Hobby](https://vercel.com/docs/plans/hobby), [Supabase billing FAQ](https://supabase.com/docs/guides/platform/billing-faq).
 
-## What is real, and what is mocked?
+- One private owner workspace, protected by a random access code and HttpOnly session cookie.
+- Local access code: `.data/prototype-access.txt` (ignored by Git and excluded from deployments).
+- Originals upload directly to private storage, avoiding Vercel’s 4.5 MB request limit. Maximum 50 MB/file; 900 MB application storage allowance below the Free Plan’s 1 GB bucket quota. Delete unneeded media from its detail dialog. Media used by saved posts is protected from deletion.
+- Postgres uses verified TLS; records deny anonymous/authenticated Data API access. Server credentials never enter the frontend.
+- Free projects can pause after inactivity. No automatic paid upgrades or background keep-alive services.
+- Local and hosted workspaces are separate; local uploads are not automatically copied online.
 
-| Capability                 | Local MVP behavior                                                                                                                                                                                                                                    |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upload/storage             | Real file uploads; originals stored on disk, separate normalized JPEG thumbnails. 50 MB per file; many files handled sequentially to bound memory. Images: JPG, PNG, WebP, AVIF. Videos: MP4, MOV, WebM; playback depends on browser codec support.   |
-| Persistence                | SQLite stores business, asset metadata/analysis/tags, used state, drafts, performance, connection state and latest recommendation. Media lives outside the DB.                                                                                        |
-| Without an AI key          | Real local brightness, resolution and duplicate checks. Subject recognition is **not** performed. Turkish copy comes from labeled templates; seeded analyses are examples.                                                                            |
-| Paid AI adapter (disabled) | Retained in source, but application startup prevents selecting it under the owner’s no-bill requirement. Local checks/templates remain available.                                                                                                     |
-| Video analysis             | Browser selects one frame around the first second. The AI can assess that frame, not motion or audio. If extraction fails, video is retained with basic guidance. Preview it before sharing.                                                          |
-| Crop/trim/text             | Recommendations and a visual preview, **not rendered edits**. Original media downloads unchanged. No video transcoding or automatic editing.                                                                                                          |
-| Instagram connection       | **Mock adapter only**, clearly labeled. Disabled in the normal app. In explicit test/demo mode only, “Try demo connection” loads example historical posts and metrics. No external account access, authentication, sync or publishing.                |
-| Results and learning       | Real deterministic calculations on persisted data, including manually entered real results. Missing values stay unknown. Reach is summed per post, not unique people across all posts. Followers are unavailable and omitted. No AI-invented metrics. |
-| Seasonal ideas             | Istanbul calendar and available tags; no external trend scraping.                                                                                                                                                                                     |
-| S3                         | Adapter retained but disabled by the free-only policy. All current uploads use local disk.                                                                                                                                                            |
+For a new hosted installation: verify the actual free plans, provide the environment variables in `.env.example`, run `scripts/setup-hosted.mjs` with those variables, and configure private access before deploying. `scripts/prepare-access.mjs` generates local ignored access files; do not commit them. `vercel.json` routes the Vite frontend and Express API.
 
-## Credentials and connections
+## Instagram: read-only
 
-**None needed to use the complete local demo.**
+OAuth and insights importing are implemented. Real connection needs the Instagram App ID, App Secret and callback URI from a Meta developer app. See [exact setup instructions](docs/instagram-setup.md).
 
-The owner requires **zero service charges**. Paid AI and S3 storage are disabled by `server/cost-policy.mjs`. Adding an OpenAI key does not activate it; selecting `AI_PROVIDER=openai` or setting `S3_BUCKET` stops startup with an explanatory error. The app uses local image checks and Turkish templates. A live free AI provider has not been connected. Tests make no paid calls.
+The fixed permission list is **only** `instagram_business_basic` and `instagram_business_manage_insights`. No publishing, messages, comment-management or advertising scopes. Tokens are encrypted server-side. Refresh imports recent posts and available insights; disconnect deletes the saved token/imported results and attempts remote revocation.
 
-For real Instagram history, the remaining work is **integration development**, not just adding a token. Supply an Instagram Professional account, a Meta developer app with the necessary approved permissions, and a registered callback URL. Then replace `server/instagram.mjs` with OAuth, token storage/refresh, pagination and normalized media/insights fetching. Exact permissions and authentication flow must be verified against Meta’s current documentation during that integration. No app credentials or approval are needed for the mock. Publishing remains out of scope.
+Before credentials are configured, the UI honestly shows setup pending. **Live Meta login has not been verified with a real account.** Automated OAuth tests use controlled responses. Personal prototype testers must be added to the Meta app; accounts outside that group require Meta approval.
 
-Media stays on local disk. The S3 adapter remains in source for reference but cannot be selected in the free-only configuration.
+Results show lifetime metrics for posts published within the last 30 days. Missing values remain unknown. Per-post reach is summed, not unique across posts. Imported results take precedence over manual entries to prevent double counting; the data source is labeled. Instagram history informs recommendations, but is not automatically imported into the unused media library.
 
-## Tests
+## What remains limited
+
+- **AI:** real brightness, resolution and duplicate checks; one selected video frame. Turkish text uses clearly labeled templates. No semantic cake recognition, live LLM, motion/audio analysis, or paid API calls.
+- **Video editing:** previews and instructions, not rendered edits or transcoding. Browser codec support determines playback. Export HEIC photos as JPG first.
+- **Account model:** a single private prototype workspace, not a multi-user product. Keep the access code private. No billing, teams, ads, scheduling or other social platforms.
+- **Backups:** keep original media and export important drafts. No paid backup add-on is provisioned. Back up local SQLite and media together while the app is stopped.
+
+## Verification
 
 ```sh
 npm test
 npm run build
-npx playwright install chromium   # first time only, if Chromium is not installed
+npx playwright install chromium  # first use only
 npm run test:ui
 ```
 
-API tests start a separate app against a disposable data directory, verify file downloads and persistence across a real process restart. Browser tests use another temporary data directory and the production build. They exercise a 25-file batch (20 photos + 5 actual generated test videos), failure/duplicate handling, optional Instagram demo, mobile navigation, generation, editing, copy/download, saved drafts, marked-as-posted state, manual results, carousel preview and low inventory. Provider contract tests use a fake HTTP response; no credentials or paid calls.
+Backend tests cover persistence, quality checks, permissions, OAuth cancellation/replay, encrypted tokens, read-only requests, missing metrics and no-bill configuration. Browser tests cover a 25-file batch, navigation, Turkish drafts, editing, copy/download, results and low inventory. Cloud smoke tests use `scripts/verify-hosted.mjs` explicitly against the owner’s workspace and remove only their own temporary media.
 
-See [verification details](docs/verification.md) and screenshots in `docs/screenshots/`.
+Architecture: `server/db.mjs` selects SQLite/Postgres; `server/storage.mjs` handles private files; `server/domain.mjs` contains recommendations; `server/instagram.mjs` contains the read-only adapter; `server/instagram-routes.mjs` owns OAuth/sync; `server/ai.mjs` contains local checks and disabled paid adapter; `src/app.jsx` is the UI. See [verification details](docs/verification.md).
 
-## Architecture and limits
-
-- React + Vite frontend; Express server; Node SQLite; Sharp thumbnails/checks.
-- `server/ai.mjs`: replaceable `analyze()` / `generate()` provider boundary. `AI_PROVIDER=demo` in free-only mode; disabled OpenAI implementation uses [image inputs](https://developers.openai.com/api/docs/guides/images-vision) and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
-- `server/domain.mjs`: pure inventory, seasonal, comparison, recommendation and template functions.
-- `server/instagram.mjs`: mock history/connection adapter. No publishing endpoint exists.
-- `server/storage.mjs`: private local or S3 storage behind the same file URLs.
-- `server/db.mjs`: persisted records scoped to the single Cake Gallery workspace.
-- `src/app.jsx`: UI and upload queue; `src/style.css`: responsive visual styles.
-
-This is a **single-owner local application**, bound to loopback by default, without login/multi-tenant authorization. Keep it local; public hosting needs authentication, authorization, quotas and durable backups. Uploads and AI requests are synchronous, bounded and retriable, suitable for a local MVP. Near-duplicate detection is a simple perceptual hash and can flag false matches. Review flagged media and use “Analyze again” for quality checks; similarity flags remain intentionally conservative. HEIC is not advertised: export iPhone HEIC photos as JPG first. No scheduling, team management, billing, ads, Google integrations or other social networks.
-
-Back up the SQLite database and media objects together while the app is stopped. `.env`, `.data/`, dependencies and build/test artifacts are ignored by Git. Do not commit secrets or private bakery photos.
-
-## GitHub and Vercel next step
-
-Repository: [edakturk14/crumb-marketing](https://github.com/edakturk14/crumb-marketing). No local database, uploaded media, secrets or dependencies belong in Git.
-
-The current persistence is local SQLite (`.data/crumb.sqlite`) and local files (`.data/objects`). It is not yet wired to a hosted database. Before a Vercel preview is used for real uploads, migrate metadata to a hosted database, use durable object storage, and adapt uploads to go directly to storage. Vercel functions have a 4.5 MB request payload limit, below the MVP’s 50 MB video limit. Add owner authentication as part of that deployment.
-
-The owner clarified that this is a **personal, non-commercial prototype**, with no sales or earnings. Vercel Hobby fits that scope. Use the actual Hobby plan, not a Pro trial or the free allowance inside a paid plan. No hosted resources have been provisioned. References: [Hobby plan and usage limits](https://vercel.com/docs/plans/hobby), [function limits](https://vercel.com/docs/functions/limitations).
-
-For the free hosted prototype, keep Vercel Hobby and evaluate Supabase Free for database/auth/media, verifying the actual account plans and quotas before provisioning. This requires backend adaptation; it is not a completed deployment. Hitting a free quota must restrict service instead of incurring charges. Do not attach paid plans or rely on billing alerts as a spending cap. Source: [Supabase billing FAQ](https://supabase.com/docs/guides/platform/billing-faq).
+Repository: [edakturk14/crumb-marketing](https://github.com/edakturk14/crumb-marketing).

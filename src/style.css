@@ -2388,3 +2388,20 @@ input[readonly] {
     justify-self: start;
   }
 }
+
+.access-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.access-page .settings-card {
+  width: min(100%, 440px);
+  margin: 0;
+}
+.access-page h1 {
+  font-family: Georgia, serif;
+  font-size: 48px;
+  color: var(--olive, #535b3a);
+  margin: 0 0 24px;
+}

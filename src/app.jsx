@@ -52,7 +52,11 @@ const api = async (url, body, method = body ? "POST" : "GET") => {
     body: body ? JSON.stringify(body) : undefined,
   });
   const d = await res.json();
-  if (!res.ok) throw new Error(d.error || "Please try again.");
+  if (!res.ok) {
+    if (res.status === 401 && url !== "/login")
+      window.dispatchEvent(new Event("crumb-locked"));
+    throw new Error(d.error || "Please try again.");
+  }
   return d;
 };
 function Media({ asset, controls = false, ...props }) {
@@ -149,7 +153,7 @@ async function videoFrame(file) {
     video.src = url;
   });
 }
-function App() {
+function App({ onLogout }) {
   const [data, setData] = useState(null),
     [page, setPage] = useState(
       decodeURIComponent(location.hash.slice(1)) || "Today",
@@ -171,7 +175,31 @@ function App() {
     return d;
   };
   useEffect(() => {
-    reload().catch((e) => setError(e.message));
+    const status = new URLSearchParams(location.search).get("instagram");
+    const messages = {
+      connected: "Instagram connected with read-only access.",
+      cancelled:
+        "Instagram connection cancelled. You can try again whenever you like.",
+      invalid: "The connection link expired. Please connect Instagram again.",
+      failed:
+        "Instagram sign-in could not finish. Check that this Professional account is allowed to test the Meta app, then reconnect.",
+    };
+    if (status) {
+      history.replaceState(null, "", location.pathname + location.hash);
+      setToast(messages[status] || "Please reconnect Instagram.");
+    }
+    reload()
+      .then(async () => {
+        if (status === "connected") {
+          try {
+            await api("/instagram/sync", {});
+            await reload();
+          } catch (e) {
+            setError(e.message);
+          }
+        }
+      })
+      .catch((e) => setError(e.message));
     const change = () =>
       setPage(decodeURIComponent(location.hash.slice(1)) || "Today");
     window.addEventListener("hashchange", change);
@@ -242,38 +270,62 @@ function App() {
       }
       try {
         update(item.id, { status: "Preparing" });
-        const form = new FormData();
-        form.append("file", item.file);
-        if (item.file.type.startsWith("video/")) {
-          const frame = await videoFrame(item.file);
+        const frame = item.file.type.startsWith("video/")
+          ? await videoFrame(item.file)
+          : null;
+        if (data.providers.storage === "supabase") {
+          let ticket;
+          try {
+            ticket = await api("/uploads", {
+              name: item.file.name,
+              mime: item.file.type,
+              size: item.file.size,
+              frame: !!frame,
+            });
+            await directUpload(ticket.url, item.file, (p) =>
+              update(item.id, { progress: p, status: "Uploading" }),
+            );
+            if (frame) await directUpload(ticket.frameUrl, frame, () => {});
+            update(item.id, { status: "Analyzing", progress: 100 });
+            await api(`/uploads/${ticket.id}/complete`, {});
+          } catch (e) {
+            if (ticket)
+              await api(`/uploads/${ticket.id}`, null, "DELETE").catch(
+                () => {},
+              );
+            throw e;
+          }
+        } else {
+          const form = new FormData();
+          form.append("file", item.file);
           if (frame) form.append("frame", frame, "frame.jpg");
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/api/assets");
+            xhr.timeout = 120000;
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable)
+                update(item.id, {
+                  progress: Math.round((e.loaded / e.total) * 100),
+                  status: e.loaded === e.total ? "Analyzing" : "Uploading",
+                });
+            };
+            xhr.onload = () => {
+              try {
+                const d = JSON.parse(xhr.responseText);
+                if (xhr.status >= 400) reject(new Error(d.error));
+                else resolve(d);
+              } catch {
+                reject(new Error("Upload failed. Try this file again."));
+              }
+            };
+            xhr.onerror = () =>
+              reject(new Error("Connection lost. Try this file again."));
+            xhr.ontimeout = () =>
+              reject(new Error("Upload timed out. Try this file again."));
+            xhr.send(form);
+          });
         }
-        await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", "/api/assets");
-          xhr.timeout = 120000;
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable)
-              update(item.id, {
-                progress: Math.round((e.loaded / e.total) * 100),
-                status: e.loaded === e.total ? "Analyzing" : "Uploading",
-              });
-          };
-          xhr.onload = () => {
-            try {
-              const d = JSON.parse(xhr.responseText);
-              if (xhr.status >= 400) reject(new Error(d.error));
-              else resolve(d);
-            } catch {
-              reject(new Error("Upload failed. Try this file again."));
-            }
-          };
-          xhr.onerror = () =>
-            reject(new Error("Connection lost. Try this file again."));
-          xhr.ontimeout = () =>
-            reject(new Error("Upload timed out. Try this file again."));
-          xhr.send(form);
-        });
         update(item.id, { status: "Done", progress: 100 });
         await reload();
       } catch (e) {
@@ -323,12 +375,12 @@ function App() {
       <div>
         <h3>
           {data.connection.connected
-            ? "Instagram demo connected"
+            ? `Instagram connected · @${data.connection.username}`
             : "A little better, together."}
         </h3>
         <p>
           {data.connection.connected
-            ? "You’re exploring sample Instagram results."
+            ? "Read-only access · profile, posts and insights."
             : "Connect Instagram to learn what your customers love."}
         </p>
       </div>
@@ -484,9 +536,11 @@ function App() {
                     <div className="reason-source">
                       {rec.source === "demo"
                         ? "Based on sample performance data"
-                        : rec.source === "manual"
-                          ? "Based on your recorded results"
-                          : "Based on your available content"}
+                        : rec.source === "instagram"
+                          ? "Based on your Instagram results"
+                          : rec.source === "manual"
+                            ? "Based on your recorded results"
+                            : "Based on your available content"}
                     </div>
                     <button
                       className="button primary"
@@ -891,7 +945,7 @@ function App() {
                   [
                     "Instagram",
                     data.connection.connected
-                      ? "Demo connected"
+                      ? "Connected · read-only"
                       : "Not connected · optional",
                   ],
                   ["Google Business", "Coming later"],
@@ -905,14 +959,15 @@ function App() {
                   </div>
                 ))}
                 <p>
-                  We will never publish without your approval. This MVP prepares
-                  drafts for you to share manually.
+                  Instagram access is read-only. This MVP prepares drafts for
+                  you to share manually.
                 </p>
               </div>
             </>
           )}
           {page === "Settings" && (
             <SettingsPage
+              onLogout={onLogout ? () => run(onLogout) : null}
               data={data}
               busy={busy}
               save={(v) =>
@@ -1073,6 +1128,37 @@ function App() {
                   >
                     {modal.asset.used ? "Mark as unused" : "Mark as posted"}
                   </button>
+                  {!modal.asset.demo &&
+                    !data.posts.some((p) =>
+                      p.assetIds.includes(modal.asset.id),
+                    ) && (
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              "Delete this file from your workspace? This cannot be undone.",
+                            )
+                          )
+                            return;
+                          run(async () => {
+                            await api(
+                              `/assets/${modal.asset.id}`,
+                              null,
+                              "DELETE",
+                            );
+                            setModal(null);
+                            await reload();
+                            setToast(
+                              "File deleted. Storage space is available again.",
+                            );
+                          });
+                        }}
+                      >
+                        Delete file
+                      </button>
+                    )}
                 </div>
               </div>
             </div>
@@ -1166,53 +1252,105 @@ function App() {
                 best, and make better recommendations.
               </p>
               <ul>
-                <li>See your historical media and performance</li>
-                <li>Learn which content your customers love</li>
-                <li>Eventually publish posts you’ve approved</li>
+                <li>Read your profile and previous posts</li>
+                <li>Read views, reach and interactions when available</li>
+                <li>Use results to recommend what to create next</li>
               </ul>
               <p>
-                <strong>You’ll need an Instagram Professional account.</strong>
-              </p>
-              <p>We will never publish without your approval.</p>
-              <div className="notice">
                 <strong>
-                  {data.providers.demoEnabled
-                    ? "Local demo connection"
-                    : "Instagram setup pending"}
+                  You’ll need an Instagram Professional account (Business or
+                  Creator).
                 </strong>
-                <p>
-                  {data.providers.demoEnabled
-                    ? "Real Instagram sign-in is not enabled yet. You can explore sample history now. No Instagram account is accessed and nothing is published."
-                    : "Real Instagram sign-in is not enabled yet. You can upload your own content, create posts and enter results without connecting. No sample results will be added."}
-                </p>
+              </p>
+              <p>
+                Read-only connection. Crumb cannot publish, reply to comments,
+                read messages or manage ads.
+              </p>
+              {!data.providers.instagramConfigured && (
+                <div className="notice">
+                  <strong>One-time setup needed</strong>
+                  <p>
+                    The app owner needs to finish Meta setup before Instagram
+                    sign-in is available. Your content and drafts work without
+                    connecting.
+                  </p>
+                </div>
+              )}
+              {data.connection.connected && (
+                <div className="notice">
+                  <strong>@{data.connection.username} · read-only</strong>
+                  <p>
+                    {data.connection.lastSyncedAt
+                      ? `Last refreshed ${new Date(data.connection.lastSyncedAt).toLocaleString()}`
+                      : "Connected. Refresh to import your recent results."}
+                  </p>
+                  {data.connection.insightsUnavailable && (
+                    <p lang="tr">
+                      Instagram bazı gönderilerin istatistiklerini paylaşmadı.
+                      Eksik değerleri boş bıraktık.
+                    </p>
+                  )}
+                  {data.connection.partial && (
+                    <p lang="tr">
+                      Sonuçların bir kısmını alabildik. Biraz sonra tekrar
+                      yenileyebilirsin.
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="button-row">
+                <button
+                  className="button primary"
+                  disabled={busy || !data.providers.instagramConfigured}
+                  onClick={() =>
+                    run(async () => {
+                      if (data.connection.connected) {
+                        await api("/instagram/sync", {});
+                        await reload();
+                        setToast("Instagram results refreshed.");
+                      } else {
+                        const result = await api("/instagram/connect", {});
+                        location.assign(result.url);
+                      }
+                    })
+                  }
+                >
+                  {data.connection.connected
+                    ? "Refresh results"
+                    : "Connect Instagram"}
+                  <ArrowRight size={17} />
+                </button>
+                {data.connection.connected && (
+                  <>
+                    <button
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const result = await api("/instagram/connect", {});
+                          location.assign(result.url);
+                        })
+                      }
+                    >
+                      Reconnect
+                    </button>
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const result = await api("/instagram/disconnect", {});
+                          await reload();
+                          setModal(null);
+                          setToast(result.message);
+                        })
+                      }
+                    >
+                      Disconnect & remove imported results
+                    </button>
+                  </>
+                )}
               </div>
-              <button
-                className="button primary"
-                disabled={busy || !data.providers.demoEnabled}
-                onClick={() =>
-                  run(async () => {
-                    await api(
-                      "/instagram/" +
-                        (data.connection.connected ? "disconnect" : "connect"),
-                      {},
-                    );
-                    await reload();
-                    setModal(null);
-                    setToast(
-                      data.connection.connected
-                        ? "Demo disconnected"
-                        : "Demo connected. Sample history is ready.",
-                    );
-                  })
-                }
-              >
-                {!data.providers.demoEnabled
-                  ? "Connection coming soon"
-                  : data.connection.connected
-                    ? "Disconnect demo"
-                    : "Try demo connection"}{" "}
-                <ArrowRight size={17} />
-              </button>
             </div>
           )}
           {modal.type === "metrics" && (
@@ -1279,9 +1417,11 @@ function Results({ data, connectCard, metrics }) {
         <span className="online-dot" />
         {s.source === "demo"
           ? "Sample data — these are example results, not your real Instagram performance."
-          : s.source === "manual"
-            ? "Your recorded results — sample data is excluded. Interactions sum the likes, comments and saves you entered."
-            : "No results yet. Record results after sharing your first post."}
+          : s.source === "instagram"
+            ? "From Instagram · lifetime results for posts published in the last 30 days. Manual entries are excluded to avoid double counting."
+            : s.source === "manual"
+              ? "Your recorded results — sample data is excluded. Interactions sum the likes, comments and saves you entered."
+              : "No results yet. Record results after sharing your first post."}
       </div>
       <div className="stats">
         {[
@@ -1322,9 +1462,9 @@ function Results({ data, connectCard, metrics }) {
           </h3>
           <p lang="tr">
             {s.ratio > 1
-              ? `${s.source === "demo" ? "Örnek verilerde" : "Girdiğin sonuçlarda"} videolar, fotoğraflardan ortalama ${s.ratio} kat daha fazla görüntüleniyor. Bu bir garanti değil, yeni içerik için bir ipucu.`
+              ? `${s.source === "demo" ? "Örnek verilerde" : "Sonuçlarına göre"} videolar, fotoğraflardan ortalama ${s.ratio} kat daha fazla görüntüleniyor. Bu bir garanti değil, yeni içerik için bir ipucu.`
               : s.ratio !== null && s.ratio < 1
-                ? "Girdiğin sonuçlarda fotoğrafların ortalama görüntülenmesi videolardan daha yüksek. Net bir pasta fotoğrafıyla devam edebilirsin."
+                ? "Sonuçlarına göre fotoğrafların ortalama görüntülenmesi videolardan daha yüksek. Net bir pasta fotoğrafıyla devam edebilirsin."
                 : s.ratio === 1
                   ? "Fotoğrafların ve videoların ortalama görüntülenmesi benzer. Yeni çekimleri deneyerek devam et."
                   : "Sağlıklı bir karşılaştırma için en az iki video ve iki fotoğraftan sonuç alalım. Şimdilik farklı çekimleri deneyebilirsin."}
@@ -1440,7 +1580,7 @@ function Results({ data, connectCard, metrics }) {
     </>
   );
 }
-function SettingsPage({ data, save, connect, busy }) {
+function SettingsPage({ data, save, connect, busy, onLogout }) {
   const [v, setV] = useState(data.business);
   return (
     <>
@@ -1487,13 +1627,26 @@ function SettingsPage({ data, save, connect, busy }) {
         <h2>Instagram</h2>
         <p>
           {data.connection.connected
-            ? "Demo connected · sample history"
+            ? `Connected · @${data.connection.username} · read-only`
             : "Not connected · you can use the app without Instagram"}
         </p>
         <button className="button secondary" onClick={connect}>
           Manage connection <ArrowUpRight size={17} />
         </button>
       </div>
+      {onLogout && (
+        <div className="settings-card">
+          <h2>Private workspace</h2>
+          <p>Sign out when you’re done on a shared device.</p>
+          <button
+            className="button secondary"
+            disabled={busy}
+            onClick={onLogout}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -1804,4 +1957,103 @@ function MetricsForm({ post, existing, busy, save }) {
     </form>
   );
 }
-createRoot(document.getElementById("root")).render(<App />);
+function PrivateWorkspace() {
+  const [session, setSession] = useState(null),
+    [code, setCode] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api("/session")
+      .then(setSession)
+      .catch((e) => setError(e.message));
+    const lock = () => setSession({ authenticated: false, protected: true });
+    window.addEventListener("crumb-locked", lock);
+    return () => window.removeEventListener("crumb-locked", lock);
+  }, []);
+  if (session?.authenticated)
+    return (
+      <App
+        onLogout={
+          session.protected
+            ? async () => {
+                await api("/logout", {});
+                setCode("");
+                setSession({ ...session, authenticated: false });
+              }
+            : null
+        }
+      />
+    );
+  return (
+    <main className="access-page">
+      <form
+        className="settings-card"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError("");
+          try {
+            await api("/login", { code });
+            setSession({ authenticated: true, protected: true });
+            setCode("");
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h1>crumb</h1>
+        <h2>Your private workspace.</h2>
+        <p>Photos, ideas and posts for Cake Gallery Maslak.</p>
+        {session ? (
+          <>
+            <label>
+              Access code
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={code}
+                required
+                onChange={(e) => setCode(e.target.value)}
+              />
+            </label>
+            <button className="button primary" disabled={busy}>
+              {busy ? "Opening…" : "Open workspace"}
+            </button>
+            <small>Use the private access code saved with your project.</small>
+          </>
+        ) : (
+          <p>Opening your workspace…</p>
+        )}
+        {error && <p role="alert">{error}</p>}
+      </form>
+    </main>
+  );
+}
+function directUpload(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.timeout = 180000;
+    xhr.setRequestHeader("Content-Type", file.type || "image/jpeg");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable)
+        onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(
+            new Error(
+              "Upload failed or free storage is full. Please try again.",
+            ),
+          );
+    xhr.onerror = () =>
+      reject(new Error("Connection lost. Try this file again."));
+    xhr.ontimeout = () =>
+      reject(new Error("Upload timed out. Try this file again."));
+    xhr.send(file);
+  });
+}
+createRoot(document.getElementById("root")).render(<PrivateWorkspace />);

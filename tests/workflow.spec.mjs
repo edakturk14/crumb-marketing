@@ -23,9 +23,11 @@ test("Today, optional Instagram, instructions, settings and mobile navigation", 
     .getByRole("button", { name: "Connect Instagram", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toContainText("Professional account");
-  await expect(page.getByRole("dialog")).toContainText("nothing is published");
-  await page.getByRole("button", { name: "Try demo connection" }).click();
-  await expect(page.getByText("Instagram demo connected")).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("Read-only connection");
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Connect Instagram" }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await page.getByRole("link", { name: "How to use", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Add your content", exact: true }),
@@ -33,7 +35,9 @@ test("Today, optional Instagram, instructions, settings and mobile navigation", 
   await expect(
     page.getByRole("heading", { name: "Create your post", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Demo connected", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Not connected · optional", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .getByLabel("Business name", { exact: true })

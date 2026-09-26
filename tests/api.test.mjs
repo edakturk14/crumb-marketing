@@ -169,7 +169,7 @@ test("API: upload → analyze → recommend → generate → post → results �
   );
   assert.equal((await req("/instagram/connect", {})).status, 503);
   const s = (await req("/state")).data;
-  assert.equal(s.connection.mode, "mock");
+  assert.equal(s.connection.mode, "live");
   assert.equal(s.connection.connected, false);
   assert.equal(s.providers.demoEnabled, false);
   assert.equal(s.summary.views, 1200);

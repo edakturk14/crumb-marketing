@@ -12,6 +12,17 @@ export function freeOnlyConfiguration(env = process.env) {
       "Free-only mode: external S3 storage is disabled. Clear S3_BUCKET to keep media on local disk.",
     );
   }
-  return Object.freeze({ ai: "demo", storage: "local" });
+  const storage = env.STORAGE_PROVIDER || "local";
+  if (!["local", "supabase"].includes(storage))
+    throw new Error("Free-only mode: unsupported storage provider.");
+  if (storage === "supabase" && env.SUPABASE_PLAN !== "free")
+    throw new Error(
+      "Free-only mode: verify Supabase Free Plan before connecting.",
+    );
+  if (env.VERCEL && (storage !== "supabase" || env.DEMO_MODE === "true"))
+    throw new Error(
+      "Hosted mode requires persistent free storage and no sample data.",
+    );
+  return Object.freeze({ ai: "demo", storage });
 }
 export const freeOnly = freeOnlyConfiguration();
