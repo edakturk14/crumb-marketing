@@ -50,7 +50,7 @@ test("private workspace and browser-bound OAuth: cancel, success, replay, encryp
         data: [
           {
             id: "99",
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(Date.now() - 1000).toISOString(),
             media_type: "IMAGE",
             like_count: 2,
             comments_count: 0,

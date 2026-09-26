@@ -67,3 +67,9 @@ Backend tests cover persistence, quality checks, permissions, OAuth cancellation
 Architecture: `server/db.mjs` selects SQLite/Postgres; `server/storage.mjs` handles private files; `server/domain.mjs` contains recommendations; `server/instagram.mjs` contains the read-only adapter; `server/instagram-routes.mjs` owns OAuth/sync; `server/ai.mjs` contains local checks and disabled paid adapter; `src/app.jsx` is the UI. See [verification details](docs/verification.md).
 
 Repository: [edakturk14/crumb-marketing](https://github.com/edakturk14/crumb-marketing).
+
+## Google sign-in migration
+
+Google login is implemented with Supabase Auth on the existing Free Plan. It replaces the access code once the Google OAuth client is configured and the owner’s allowed email list is supplied. See [the exact setup values](docs/google-login-setup.md). The current access code remains usable until that external setup is ready, avoiding a lockout.
+
+In `AUTH_PROVIDER=google` mode, only invited, verified Google accounts can enter the shared bakery workspace. Old access codes/cookies are rejected. Supabase handles accounts and Google handles passwords; Crumb does not add a name/password database. The backend checks identity on every request. No Google content permissions are requested, and Instagram authorization remains separate.

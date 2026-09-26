@@ -2405,3 +2405,31 @@ input[readonly] {
   color: var(--olive, #535b3a);
   margin: 0 0 24px;
 }
+
+.google-sign-in {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #747775;
+  border-radius: 24px;
+  background: #fff;
+  color: #1f1f1f;
+  font:
+    500 15px Arial,
+    sans-serif;
+  cursor: pointer;
+}
+.google-sign-in:hover:not(:disabled) {
+  background: #f8faff;
+}
+.google-sign-in:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.auth-explanation {
+  margin: 12px 0;
+  line-height: 1.6;
+}

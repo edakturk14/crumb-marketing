@@ -1957,16 +1957,56 @@ function MetricsForm({ post, existing, busy, save }) {
     </form>
   );
 }
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 48 48">
+      <path
+        fill="#4285F4"
+        d="M43.6 20.5H24v8h11.3c-.5 2.6-2 4.8-4.3 6.3v5.2h6.9c4-3.7 6.2-9.1 6.2-15.5 0-1.4-.2-2.7-.5-4Z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 44c5.6 0 10.3-1.8 13.8-5l-6.9-5.2c-1.9 1.3-4.3 2.1-6.9 2.1-5.4 0-10-3.7-11.7-8.7H5.2v5.5C8.6 39.4 15.7 44 24 44Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M12.3 27.2a12 12 0 0 1 0-6.4v-5.5H5.2a20 20 0 0 0 0 17.4Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M24 12.1c3 0 5.6 1 7.7 3l5.8-5.8C34.3 5.9 29.6 4 24 4 15.7 4 8.6 8.6 5.2 15.3l7.1 5.5c1.7-5 6.3-8.7 11.7-8.7Z"
+      />
+    </svg>
+  );
+}
 function PrivateWorkspace() {
   const [session, setSession] = useState(null),
     [code, setCode] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    const s = await api("/session");
+    setSession(s);
+    if (s.error) setError(s.error);
+  };
   useEffect(() => {
-    api("/session")
-      .then(setSession)
-      .catch((e) => setError(e.message));
-    const lock = () => setSession({ authenticated: false, protected: true });
+    const status = new URLSearchParams(location.search).get("auth");
+    const messages = {
+      cancelled: "Google sign-in was cancelled. You can try again.",
+      expired: "This sign-in link expired. Please try again.",
+      denied:
+        "This Google account does not have access to Cake Gallery. Use an invited account or ask the owner to add your email.",
+      setup: "Google sign-in needs its one-time setup.",
+    };
+    if (status) {
+      setError(messages[status] || "Please try signing in again.");
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
+    refresh().catch((e) => setError(e.message));
+    const lock = () => {
+      setSession((s) => ({ ...s, authenticated: false }));
+      refresh().catch((e) => setError(e.message));
+    };
     window.addEventListener("crumb-locked", lock);
     return () => window.removeEventListener("crumb-locked", lock);
   }, []);
@@ -1984,6 +2024,7 @@ function PrivateWorkspace() {
         }
       />
     );
+  const google = session?.provider === "google";
   return (
     <main className="access-page">
       <form
@@ -1993,9 +2034,14 @@ function PrivateWorkspace() {
           setBusy(true);
           setError("");
           try {
-            await api("/login", { code });
-            setSession({ authenticated: true, protected: true });
-            setCode("");
+            if (google) {
+              const result = await api("/auth/google", {});
+              location.assign(result.url);
+            } else {
+              await api("/login", { code });
+              setCode("");
+              await refresh();
+            }
           } catch (e) {
             setError(e.message);
           } finally {
@@ -2007,26 +2053,72 @@ function PrivateWorkspace() {
         <h2>Your private workspace.</h2>
         <p>Photos, ideas and posts for Cake Gallery Maslak.</p>
         {session ? (
-          <>
-            <label>
-              Access code
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={code}
-                required
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </label>
-            <button className="button primary" disabled={busy}>
-              {busy ? "Opening…" : "Open workspace"}
-            </button>
-            <small>Use the private access code saved with your project.</small>
-          </>
+          google ? (
+            <>
+              <button
+                className="google-sign-in"
+                disabled={busy || !session.ready}
+              >
+                <GoogleMark />
+                {busy ? "Opening Google…" : "Continue with Google"}
+              </button>
+              <p className="auth-explanation">
+                Use the Google account invited to this workspace. Your Google
+                password stays with Google.
+              </p>
+              <small>
+                Supabase securely manages sign-in and basic account details. No
+                Gmail or Drive access is requested.
+              </small>
+              {!session.ready && (
+                <p className="notice">
+                  Google sign-in setup is still being completed. Please contact
+                  the app owner.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <button type="button" className="google-sign-in" disabled>
+                <GoogleMark />
+                Continue with Google
+              </button>
+              <small>
+                Google sign-in is waiting for its one-time setup. Your current
+                access still works below.
+              </small>
+              <label>
+                Temporary access code
+                <input
+                  aria-label="Access code"
+                  type="password"
+                  autoComplete="current-password"
+                  value={code}
+                  required
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <button className="button primary" disabled={busy}>
+                {busy ? "Opening…" : "Open workspace"}
+              </button>
+              <small>
+                Temporary access while Google sign-in is being configured.
+              </small>
+            </>
+          )
         ) : (
           <p>Opening your workspace…</p>
         )}
         {error && <p role="alert">{error}</p>}
+        {!session && error && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => refresh().catch((e) => setError(e.message))}
+          >
+            Try again
+          </button>
+        )}
       </form>
     </main>
   );
